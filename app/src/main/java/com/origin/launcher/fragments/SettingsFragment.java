@@ -390,7 +390,7 @@ public void onVersionSelected(GameVersion version) {
             }
             
             // Set initial presence when RPC connects
-            discordManager.updatePresence("Browsing Settings", "Configuring Xelo Client");
+            discordManager.updatePresence("Browsing Settings", "Configuring SALEM CLIENT");
         }
     }
     
