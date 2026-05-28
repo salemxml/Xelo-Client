@@ -240,8 +240,8 @@ public class DiscordRPC {
             
             JSONObject properties = new JSONObject();
             properties.put("os", "Android");
-            properties.put("browser", "Xelo Client");
-            properties.put("device", "Xelo Client");
+            properties.put("browser", "SALEM CLIENT");
+            properties.put("device", "SALEM CLIENT");
             
             JSONObject identify = new JSONObject();
             identify.put("op", 2); // Identify opcode
@@ -275,10 +275,10 @@ public class DiscordRPC {
             
             if (!currentActivity.isEmpty() || !currentDetails.isEmpty()) {
                 JSONObject activity = new JSONObject();
-                activity.put("name", "Xelo Client");
+                activity.put("name", "SALEM CLIENT");
                 activity.put("type", 0); // Playing
                 activity.put("application_id", APPLICATION_ID); // Add Application ID
-                activity.put("details", currentDetails.isEmpty() ? "Using Xelo Client" : currentDetails);
+                activity.put("details", currentDetails.isEmpty() ? "Using SALEM CLIENT" : currentDetails);
                 activity.put("state", currentActivity.isEmpty() ? "Best MCPE Client" : currentActivity);
                 
                 // Add timestamps
@@ -289,7 +289,7 @@ public class DiscordRPC {
                 // Add assets with your uploaded image
                 JSONObject assets = new JSONObject();
                 assets.put("large_image", "untitled224_20250731110425"); // Your uploaded asset key (remove .png extension)
-                assets.put("large_text", "Xelo Client - Best MCPE Client");
+                assets.put("large_text", "SALEM CLIENT - Best MCPE Client");
                 // Optional: Add small image if you have one
                 // assets.put("small_image", "small_icon_key");
                 // assets.put("small_text", "Version 1.0");
