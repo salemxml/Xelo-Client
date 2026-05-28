@@ -24,6 +24,20 @@ public class MinecraftLauncher {
     public static final String MC_PACKAGE_NAME = "com.mojang.minecraftpe";
     private LoadingDialog loadingDialog;
 
+    // ─── Version thresholds ───────────────────────────────────────────────────
+    // libmaesdk.so  — required since 1.21.80 stable / 1.21.80.20 beta
+    private static final String MAESDK_STABLE  = "1.21.80";
+    private static final String MAESDK_BETA    = "1.21.80.20";
+
+    // libHttpClient.Android.so + libPlayFabMultiplayer.so — required since 1.21.130 stable / 1.21.130.20 beta
+    private static final String HTTPCLIENT_STABLE  = "1.21.130";
+    private static final String HTTPCLIENT_BETA    = "1.21.130.20";
+
+    // New system libs introduced in 1.24.x (e.g. 1.24.0 / 1.24.0.20 beta)
+    private static final String NEW_LIBS_STABLE = "1.24.0";
+    private static final String NEW_LIBS_BETA   = "1.24.0.20";
+    // ─────────────────────────────────────────────────────────────────────────
+
     public MinecraftLauncher(Context context) {
         this.context = context;
     }
@@ -73,12 +87,15 @@ public class MinecraftLauncher {
                 return;
             }
 
+            Log.i(TAG, "Launching Minecraft version: " + version.versionCode);
+
             activity.runOnUiThread(() -> {
                 dismissLoading();
                 loadingDialog = new LoadingDialog(activity);
                 loadingDialog.show();
             });
-                        new Thread(() -> {
+
+            new Thread(() -> {
                 try {
                     gameManager = GamePackageManager.Companion.getInstance(context.getApplicationContext(), version);
                     fillIntentWithMcPath(sourceIntent, version);
@@ -128,26 +145,36 @@ public class MinecraftLauncher {
                 sourceIntent.putExtra("MODS_ENABLED", modsEnabled);
                 sourceIntent.putExtra("MINECRAFT_VERSION", version.versionCode);
                 sourceIntent.putExtra("MINECRAFT_VERSION_DIR", version.directoryName);
+
+                Log.i(TAG, "Version " + version.versionCode
+                        + " | maesdk=" + shouldLoadMaesdk(version)
+                        + " | httpClient=" + shouldLoadHttpClient(version)
+                        + " | playFab=" + shouldLoadPlayFab(version)
+                        + " | newLibs=" + shouldLoadNewVersionLibs(version));
+
+                // Step 1: pre-load HttpClient + c++_shared (needed first for 1.21.130+)
                 if (shouldLoadHttpClient(version)) {
                     gameManager.loadLibrary("c++_shared");
                     if (gameManager.loadLibrary("HttpClient.Android")) {
-                        Log.d(TAG, "Loaded Minecraft's libHttpClient.Android.so");
+                        Log.d(TAG, "Loaded libHttpClient.Android.so");
                     } else {
-                        Log.w(TAG, "HttpClient.Android not found in extracted libs");
+                        Log.w(TAG, "HttpClient.Android not found — continuing anyway");
                     }
                 }
 
+                // Step 2: load maesdk bundle or legacy libs
                 if (shouldLoadMaesdk(version)) {
                     java.util.Set<String> excludeLibs = new java.util.HashSet<>();
                     if (shouldLoadHttpClient(version)) {
                         excludeLibs.add("c++_shared");
                         excludeLibs.add("HttpClient.Android");
                     }
-if (!shouldLoadPlayFab(version)) {
+                    if (!shouldLoadPlayFab(version)) {
                         excludeLibs.add("PlayFabMultiplayer");
                     }
                     gameManager.loadAllLibraries(excludeLibs);
                 } else {
+                    // Legacy path (< 1.21.80): load core libs manually
                     if (!shouldLoadHttpClient(version)) {
                         gameManager.loadLibrary("c++_shared");
                     }
@@ -171,52 +198,75 @@ if (!shouldLoadPlayFab(version)) {
         }).start();
     }
 
+    // ─── Library need checks ──────────────────────────────────────────────────
+
+    /** libmaesdk.so — required since 1.21.80 stable / 1.21.80.20 beta */
     private boolean shouldLoadMaesdk(GameVersion version) {
-        if (version == null || version.versionCode == null) {
-            return false;
-        }
-        String versionCode = version.versionCode;
-        String targetVersion = versionCode.contains("beta") ? "1.21.110.22" : "1.21.110";
-        return isVersionAtLeast(versionCode, targetVersion);
+        if (version == null || version.versionCode == null) return false;
+        String v = version.versionCode;
+        return isVersionAtLeast(v, isBeta(v) ? MAESDK_BETA : MAESDK_STABLE);
     }
 
+    /** libHttpClient.Android.so — required since 1.21.130 stable / 1.21.130.20 beta */
     private boolean shouldLoadHttpClient(GameVersion version) {
-        if (version == null || version.versionCode == null) {
-            return false;
-        }
-        String versionCode = version.versionCode;
-        String targetVersion = versionCode.contains("beta") ? "1.21.130.20" : "1.21.130";
-        return isVersionAtLeast(versionCode, targetVersion);
+        if (version == null || version.versionCode == null) return false;
+        String v = version.versionCode;
+        return isVersionAtLeast(v, isBeta(v) ? HTTPCLIENT_BETA : HTTPCLIENT_STABLE);
     }
 
-private boolean shouldLoadPlayFab(GameVersion version) {
-        if (version == null || version.versionCode == null) {
-            return false;
-        }
-        String versionCode = version.versionCode;
-        String targetVersion = versionCode.contains("beta") ? "1.21.130.20" : "1.21.130";
-        return isVersionAtLeast(versionCode, targetVersion);
+    /** libPlayFabMultiplayer.so — same threshold as HttpClient */
+    private boolean shouldLoadPlayFab(GameVersion version) {
+        if (version == null || version.versionCode == null) return false;
+        String v = version.versionCode;
+        return isVersionAtLeast(v, isBeta(v) ? HTTPCLIENT_BETA : HTTPCLIENT_STABLE);
     }
 
+    /**
+     * Additional system libs that became required in 1.24.x+ (e.g. 1.26.23.1).
+     * GamePackageManager.loadAllLibraries() already attempts to load all known
+     * libs, but this flag can be used for extra pre-load logic if needed.
+     */
+    private boolean shouldLoadNewVersionLibs(GameVersion version) {
+        if (version == null || version.versionCode == null) return false;
+        String v = version.versionCode;
+        return isVersionAtLeast(v, isBeta(v) ? NEW_LIBS_BETA : NEW_LIBS_STABLE);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Returns true if the version string is a beta build (has 4 numeric parts,
+     * e.g. "1.26.23.1" or "1.21.120.20").
+     */
+    private boolean isBeta(String versionCode) {
+        if (versionCode == null) return false;
+        String cleaned = versionCode.replaceAll("[^0-9.]", "");
+        return cleaned.split("\\.").length >= 4;
+    }
+
+    /**
+     * Compares two version strings numerically, part by part.
+     * Works for any depth: "1.21.130", "1.26.23.1", "2.0", etc.
+     */
     private boolean isVersionAtLeast(String currentVersion, String targetVersion) {
         try {
             String[] current = currentVersion.replaceAll("[^0-9.]", "").split("\\.");
-            String[] target = targetVersion.split("\\.");
-
-            int maxLength = Math.max(current.length, target.length);
-
-            for (int i = 0; i < maxLength; i++) {
-                int currentPart = i < current.length ? Integer.parseInt(current[i]) : 0;
-                int targetPart = i < target.length ? Integer.parseInt(target[i]) : 0;
-
-                if (currentPart > targetPart) return true;
-                if (currentPart < targetPart) return false;
+            String[] target  = targetVersion.split("\\.");
+            int maxLen = Math.max(current.length, target.length);
+            for (int i = 0; i < maxLen; i++) {
+                int cur = i < current.length ? Integer.parseInt(current[i]) : 0;
+                int tgt = i < target.length  ? Integer.parseInt(target[i])  : 0;
+                if (cur > tgt) return true;
+                if (cur < tgt) return false;
             }
             return true;
         } catch (NumberFormatException e) {
+            Log.w(TAG, "Version parse error: " + currentVersion + " vs " + targetVersion);
             return false;
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void dismissLoading() {
         try {
