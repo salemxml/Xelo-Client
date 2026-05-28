@@ -50,13 +50,17 @@ class GamePackageManager private constructor(private val context: Context, priva
      * CRITICAL ORDER:
      *   1. pairipcore  — DRM bypass (before game)
      *   2. maesdk      — Microsoft Auth SDK (before game)
-     *   3. mtbinloader2 — MaterialBinLoader / shader hooks (MUST be before minecraftpe)
+     *   3. mtbinloader2 — MaterialBinLoader / shader hooks (MUST be before minecraftpe, only when shader support is enabled)
      *   4. PlayFabMultiplayer — can follow minecraftpe, but kept here for simplicity
+     *
+     * NOTE: libmtbinloader2.so is NOT included here by default. It is added dynamically
+     * in loadAllLibraries() only when shader support is enabled by the user.
+     * Loading it without an active shader pack causes block materials to fail, making
+     * blocks invisible in-game.
      */
     private val systemLibsBeforeGame = arrayOf(
         "libpairipcore.so",
         "libmaesdk.so",
-        "libmtbinloader2.so",
         "libPlayFabMultiplayer.so",
     )
 
@@ -304,10 +308,11 @@ class GamePackageManager private constructor(private val context: Context, priva
      *
      * Order:
      *   1. Pre-game extracted libs  (c++_shared, fmod, MediaDecoders, HttpClient)
-     *   2. System hook libs         (pairipcore, maesdk, mtbinloader2, PlayFab)
+     *   2. System hook libs         (pairipcore, maesdk, PlayFab)
+     *   2b. mtbinloader2            ONLY if shader support is enabled by the user
      *   3. Game lib                 (minecraftpe) ← always last
      */
-    fun loadAllLibraries(excludeLibs: Set<String> = emptySet()) {
+    fun loadAllLibraries(excludeLibs: Set<String> = emptySet(), shaderSupportEnabled: Boolean = false) {
         fun shouldSkip(lib: String): Boolean {
             val name = lib.removePrefix("lib").removeSuffix(".so")
             return excludeLibs.contains(name) || excludeLibs.contains(lib)
@@ -321,12 +326,24 @@ class GamePackageManager private constructor(private val context: Context, priva
             }
         }
 
-        // Step 2: system hook libs (includes mtbinloader2 — before minecraftpe)
+        // Step 2: system hook libs (pairipcore, maesdk, PlayFab — before minecraftpe)
         for (lib in systemLibsBeforeGame) {
             if (shouldSkip(lib)) { Log.d(TAG, "Skipping excluded: $lib"); continue }
             if (!loadLibrary(lib.removePrefix("lib").removeSuffix(".so"))) {
                 Log.w(TAG, "Could not load system lib $lib")
             }
+        }
+
+        // Step 2b: mtbinloader2 (shader hooks) — ONLY when shader support is explicitly enabled.
+        // Loading this library without an active shader pack intercepts Minecraft's material
+        // loader and causes block materials to silently fail, making blocks invisible in-game.
+        if (shaderSupportEnabled && !shouldSkip("libmtbinloader2.so")) {
+            Log.d(TAG, "Shader support enabled — loading libmtbinloader2.so")
+            if (!loadLibrary("mtbinloader2")) {
+                Log.w(TAG, "libmtbinloader2.so not found — shader support will be unavailable")
+            }
+        } else if (!shaderSupportEnabled) {
+            Log.d(TAG, "Shader support disabled — skipping libmtbinloader2.so to prevent invisible blocks")
         }
 
         // Step 3: game lib — always last
