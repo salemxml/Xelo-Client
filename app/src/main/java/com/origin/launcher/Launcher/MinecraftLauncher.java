@@ -157,14 +157,18 @@ public class MinecraftLauncher {
                         + " | newLibs=" + loadNewLibs);
 
                 // ─── Correct loading order ────────────────────────────────────
-                // CRITICAL: libmtbinloader2.so (shader hooks) MUST be loaded
-                // before libminecraftpe.so. GamePackageManager.loadAllLibraries()
-                // guarantees this order internally.
+                // libmtbinloader2.so (shader hooks) is loaded ONLY when the user has
+                // explicitly enabled shader support in Settings. Loading it without an
+                // active shader pack causes Minecraft's material loader to silently fail,
+                // which makes blocks invisible in-game.
                 // ─────────────────────────────────────────────────────────────
+
+                boolean shaderEnabled = com.origin.launcher.utils.FeatureSettings
+                        .getInstance().isShaderSupportEnabled();
 
                 if (loadMaesdk) {
                     // Full modern path — loadAllLibraries handles the correct order:
-                    //   pre-game libs → system hook libs (incl. mtbinloader2) → minecraftpe
+                    //   pre-game libs → system hook libs → (mtbinloader2 if shaders on) → minecraftpe
                     Set<String> excludeLibs = new HashSet<>();
                     if (loadHttpClient) {
                         // HttpClient & c++_shared will be loaded first explicitly below
@@ -185,17 +189,22 @@ public class MinecraftLauncher {
                         }
                     }
 
-                    // Load remaining libs in safe order (mtbinloader2 before minecraftpe)
-                    gameManager.loadAllLibraries(excludeLibs);
+                    // Load remaining libs — mtbinloader2 included only if shaders are enabled
+                    gameManager.loadAllLibraries(excludeLibs, shaderEnabled);
 
                 } else {
-                    // Legacy path (< 1.21.80): manual load — mtbinloader2 BEFORE minecraftpe
+                    // Legacy path (< 1.21.80): manual load
                     gameManager.loadLibrary("c++_shared");
                     gameManager.loadLibrary("fmod");
                     gameManager.loadLibrary("MediaDecoders_Android");
-                    // Shader hooks first!
                     gameManager.loadLibrary("pairipcore");
-                    gameManager.loadLibrary("mtbinloader2");
+                    // Load mtbinloader2 ONLY when shader support is enabled
+                    if (shaderEnabled) {
+                        gameManager.loadLibrary("mtbinloader2");
+                        Log.d(TAG, "Loaded libmtbinloader2.so (shader support enabled)");
+                    } else {
+                        Log.d(TAG, "Skipping libmtbinloader2.so (shader support disabled)");
+                    }
                     // Game lib last
                     gameManager.loadLibrary("minecraftpe");
                 }
