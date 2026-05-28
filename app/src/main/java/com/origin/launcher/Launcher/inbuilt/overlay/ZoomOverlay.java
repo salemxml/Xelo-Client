@@ -23,6 +23,10 @@ public class ZoomOverlay extends BaseOverlayButton {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable holdRunnable = () -> {
         isHolding = true;
+        if (!initialized) {
+            Log.w(TAG, "Zoom hold ignored — native not initialized yet");
+            return;
+        }
         if (!isZooming) {
             isZooming = true;
             applyZoomLevel();
