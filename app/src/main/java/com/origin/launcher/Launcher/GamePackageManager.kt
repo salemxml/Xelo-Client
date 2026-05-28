@@ -22,12 +22,18 @@ class GamePackageManager private constructor(private val context: Context, priva
     private val nativeLibDir: String
     private val applicationInfo: ApplicationInfo
 
+    /** All known Minecraft package names across stable / beta / preview channels. */
     private val knownPackages = arrayOf(
         "com.mojang.minecraftpe",
         "com.mojang.minecraftpe.beta",
         "com.mojang.minecraftpe.preview"
     )
 
+    /**
+     * Native libraries extracted from the Minecraft APK.
+     * Ordered so that dependencies come before dependents.
+     * Covers all versions up to and including 1.26.x.
+     */
     private val requiredLibs = arrayOf(
         "libc++_shared.so",
         "libfmod.so",
@@ -36,6 +42,10 @@ class GamePackageManager private constructor(private val context: Context, priva
         "libminecraftpe.so",
     )
 
+    /**
+     * Libraries resolved from the system (loaded via System.loadLibrary).
+     * Covers all known system libs up to 1.26.x.
+     */
     private val systemLoadedLibs = arrayOf(
         "libpairipcore.so",
         "libPlayFabMultiplayer.so",
@@ -97,32 +107,28 @@ class GamePackageManager private constructor(private val context: Context, priva
 
     private fun extractLibraries() {
         val outputDir = File(nativeLibDir)
-        if (!outputDir.exists()) {
-            outputDir.mkdirs()
-        }
+        if (!outputDir.exists()) outputDir.mkdirs()
 
         if (version != null && !version.isInstalled) {
             val apkPaths = mutableListOf<String>()
             val baseApk = File(applicationInfo.sourceDir)
-            if (baseApk.exists()) {
-                apkPaths.add(applicationInfo.sourceDir)
-            } else {
-                Log.w(TAG, "Base APK not found: ${applicationInfo.sourceDir}")
-            }
+            if (baseApk.exists()) apkPaths.add(applicationInfo.sourceDir)
+            else Log.w(TAG, "Base APK not found: ${applicationInfo.sourceDir}")
+
             applicationInfo.splitSourceDirs?.forEach {
-                if (File(it).exists()) {
-                    apkPaths.add(it)
-                } else {
-                    Log.w(TAG, "Split APK not found: $it")
-                }
+                if (File(it).exists()) apkPaths.add(it)
+                else Log.w(TAG, "Split APK not found: $it")
             }
-            apkPaths.forEach { extractFromApk(it, outputDir, getDeviceAbi()) }
+
+            val primaryAbi = getDeviceAbi()
+            apkPaths.forEach { extractFromApk(it, outputDir, primaryAbi) }
+
+            // Fallback to other ABIs if any required lib is missing
             if (requiredLibs.any { !File(outputDir, it).exists() }) {
-                Log.w(TAG, "Primary ABI ${getDeviceAbi()} libraries missing, trying fallback ABIs")
-                val fallbackAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-                fallbackAbis.filter { it != getDeviceAbi() }.forEach { abi ->
-                    apkPaths.forEach { extractFromApk(it, outputDir, abi) }
-                }
+                Log.w(TAG, "Primary ABI $primaryAbi libs missing, trying fallback ABIs")
+                listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+                    .filter { it != primaryAbi }
+                    .forEach { abi -> apkPaths.forEach { path -> extractFromApk(path, outputDir, abi) } }
             }
         } else {
             val appInfo = packageContext.applicationInfo
@@ -140,21 +146,20 @@ class GamePackageManager private constructor(private val context: Context, priva
     private fun copyFromNativeDir(sourceDir: String, destDir: File) {
         val source = File(sourceDir)
         if (!source.exists()) {
-            Log.w(TAG, "Source native library directory does not exist: $sourceDir")
+            Log.w(TAG, "Source native lib dir does not exist: $sourceDir")
             return
         }
-
         requiredLibs.forEach { lib ->
-            val srcFile = File(source, lib)
-            val dstFile = File(destDir, lib)
-            if (srcFile.exists() && srcFile.length() > 0) {
+            val src = File(source, lib)
+            val dst = File(destDir, lib)
+            if (src.exists() && src.length() > 0) {
                 try {
-                    srcFile.copyTo(dstFile, overwrite = true)
-                    dstFile.setReadable(true)
-                    dstFile.setExecutable(true)
-                    logFileOperation("Copied", lib)
+                    src.copyTo(dst, overwrite = true)
+                    dst.setReadable(true)
+                    dst.setExecutable(true)
+                    Log.d(TAG, "Copied $lib")
                 } catch (e: Exception) {
-                    logFileOperation("Failed to copy", lib, e = e)
+                    Log.w(TAG, "Failed to copy $lib: ${e.message}")
                 }
             } else {
                 Log.w(TAG, "Library $lib not found in $sourceDir")
@@ -162,13 +167,31 @@ class GamePackageManager private constructor(private val context: Context, priva
         }
     }
 
+    /**
+     * Extracts [requiredLibs] from an APK/XELO archive for the given [abi].
+     *
+     * Accepts:
+     *  - base.apk / base.apk.xelo
+     *  - split APKs that contain "arm", "x86", or "config" in the filename
+     *  - Any archive whose name ends with .apk or .apk.xelo
+     */
     private fun extractFromApk(apkPath: String, outputDir: File, abi: String) {
         val apkFile = File(apkPath)
         if (!apkFile.exists()) {
-            Log.w(TAG, "APK file does not exist: $apkPath")
+            Log.w(TAG, "APK does not exist: $apkPath")
             return
         }
-        if (!apkPath.contains("arm") && !apkPath.contains("x86") && !apkPath.contains("base.apk")) {
+
+        val name = apkFile.name.lowercase()
+        val isRelevant = name.contains("base.apk") ||
+                name.contains("arm") ||
+                name.contains("x86") ||
+                name.contains("config") ||
+                name.endsWith(".apk") ||
+                name.endsWith(".apk.xelo")
+
+        if (!isRelevant) {
+            Log.d(TAG, "Skipping unrelated APK: $apkPath")
             return
         }
 
@@ -176,80 +199,60 @@ class GamePackageManager private constructor(private val context: Context, priva
             ZipFile(apkPath).use { zip ->
                 val abiPath = "lib/$abi"
                 requiredLibs.forEach { lib ->
-                    val entry = zip.getEntry("$abiPath/$lib")
-                    if (entry == null) {
-                        return@forEach
-                    }
+                    val entry = zip.getEntry("$abiPath/$lib") ?: return@forEach
                     val output = File(outputDir, lib)
-                    if (output.exists() && output.length() > 0) {
-                        return@forEach
-                    }
+                    if (output.exists() && output.length() > 0) return@forEach
                     zip.getInputStream(entry).use { input ->
-                        FileOutputStream(output).use { out ->
-                            input.copyTo(out)
-                        }
+                        FileOutputStream(output).use { out -> input.copyTo(out) }
                     }
                     output.setReadable(true)
                     output.setExecutable(true)
+                    Log.d(TAG, "Extracted $lib from $apkPath [$abi]")
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to extract libraries from $apkPath: ${e.message}")
+            Log.w(TAG, "Failed to extract libs from $apkPath: ${e.message}")
         }
     }
 
     private fun verifyLibraries(dir: File) {
-        val missing = requiredLibs.filterNot {
-            File(dir, it).let { f -> f.exists() && f.length() > 0 }
-        }
-        if (missing.isNotEmpty()) {
-            Log.w(TAG, "Missing libraries in $dir: ${missing.joinToString()}")
-        } else {
-            Log.i(TAG, "All libraries verified in $dir")
-        }
+        val missing = requiredLibs.filterNot { File(dir, it).let { f -> f.exists() && f.length() > 0 } }
+        if (missing.isNotEmpty()) Log.w(TAG, "Missing libs in $dir: ${missing.joinToString()}")
+        else Log.i(TAG, "All required libs verified in $dir")
     }
 
     private fun logFileOperation(action: String, lib: String, extra: String? = null, e: Exception? = null) {
-        val message = buildString {
+        val msg = buildString {
             append("$action $lib")
             if (extra != null) append(" $extra")
             if (e != null) append(": ${e.message}")
         }
-        if (e != null) Log.w(TAG, message) else Log.d(TAG, message)
+        if (e != null) Log.w(TAG, msg) else Log.d(TAG, msg)
     }
 
     private fun createAssetManager(): AssetManager {
         val assets = AssetManager::class.java.newInstance()
-        val addAssetPathMethod = AssetManager::class.java.getMethod("addAssetPath", String::class.java)
+        val addAssetPath = AssetManager::class.java.getMethod("addAssetPath", String::class.java)
 
         val paths = mutableListOf<String>()
-
         if (version != null && !version.isInstalled) {
             val baseApk = File(applicationInfo.sourceDir)
-            if (baseApk.exists()) {
-                paths.add(applicationInfo.sourceDir)
-            } else {
-                Log.w(TAG, "Base APK for assets not found: ${applicationInfo.sourceDir}")
-            }
+            if (baseApk.exists()) paths.add(applicationInfo.sourceDir)
+            else Log.w(TAG, "Base APK for assets not found: ${applicationInfo.sourceDir}")
             applicationInfo.splitSourceDirs?.forEach {
-                if (File(it).exists()) {
-                    paths.add(it)
-                    Log.d(TAG, "Adding split APK for assets: $it")
-                } else {
-                    Log.w(TAG, "Split APK for assets not found: $it")
-                }
+                if (File(it).exists()) paths.add(it)
+                else Log.w(TAG, "Split APK for assets not found: $it")
             }
         } else {
             paths.add(packageContext.packageResourcePath)
             val splitPath = packageContext.packageResourcePath.replace("base.apk", "split_install_pack.apk")
             if (File(splitPath).exists()) paths.add(splitPath)
         }
-
         paths.add(context.packageResourcePath)
 
         paths.forEach { path ->
             try {
-                addAssetPathMethod.invoke(assets, path)
+                addAssetPath.invoke(assets, path)
                 Log.d(TAG, "Added asset path: $path")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to add asset path $path: ${e.message}")
@@ -259,9 +262,9 @@ class GamePackageManager private constructor(private val context: Context, priva
     }
 
     private fun setupSecurityProvider() {
-        Log.d(TAG, "Setting up security provider...")
         try {
             java.security.Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1)
+            Log.d(TAG, "Conscrypt security provider installed")
         } catch (e: Exception) {
             Log.w(TAG, "Conscrypt init failed: ${e.message}")
         }
@@ -305,15 +308,13 @@ class GamePackageManager private constructor(private val context: Context, priva
                 return@forEach
             }
             if (!loadLibrary(libName)) {
-                Log.e(TAG, "Failed to load required library $libName")
+                Log.w(TAG, "Could not load library $libName — continuing")
             }
         }
     }
 
     fun getAssets(): AssetManager = assetManager
-
     fun getPackageContext(): Context = packageContext
-
     fun getApplicationInfo(): ApplicationInfo = applicationInfo
 
     fun getVersionName(): String? {
@@ -333,7 +334,7 @@ class GamePackageManager private constructor(private val context: Context, priva
         @JvmStatic
         fun getInstance(context: Context, version: GameVersion? = null): GamePackageManager {
             return synchronized(this) {
-                instance = null // Reset instance to ensure fresh initialization
+                instance = null
                 instance ?: GamePackageManager(context.applicationContext, version).also { instance = it }
             }
         }
