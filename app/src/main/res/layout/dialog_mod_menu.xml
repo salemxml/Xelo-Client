@@ -39,7 +39,7 @@
                 android:id="@+id/mod_menu_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Xelo Client"
+                android:text="SALEM CLIENT"
                 android:textColor="@color/primary"
                 android:textSize="20sp"
                 android:textStyle="bold" />
