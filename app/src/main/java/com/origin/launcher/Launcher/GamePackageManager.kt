@@ -9,7 +9,6 @@ import android.util.Log
 import com.origin.launcher.versions.GameVersion
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.io.IOException
 import java.util.zip.ZipFile
 import android.annotation.SuppressLint
@@ -30,27 +29,35 @@ class GamePackageManager private constructor(private val context: Context, priva
     )
 
     /**
-     * Native libraries extracted from the Minecraft APK.
-     * Ordered so that dependencies come before dependents.
-     * Covers all versions up to and including 1.26.x.
+     * Libraries to extract from the Minecraft APK (loaded via System.load).
+     * Does NOT include libminecraftpe.so — it is loaded last after all hooks are set up.
      */
-    private val requiredLibs = arrayOf(
+    private val preGameLibs = arrayOf(
         "libc++_shared.so",
         "libfmod.so",
         "libMediaDecoders_Android.so",
         "libHttpClient.Android.so",
-        "libminecraftpe.so",
     )
 
+    /** The main game library — must be loaded LAST so that all hook libs are ready. */
+    private val gameLib = "libminecraftpe.so"
+
+    /** All libs that must be extracted from the APK (for verifyLibraries). */
+    private val requiredLibs = preGameLibs + arrayOf(gameLib)
+
     /**
-     * Libraries resolved from the system (loaded via System.loadLibrary).
-     * Covers all known system libs up to 1.26.x.
+     * System libraries loaded via System.loadLibrary.
+     * CRITICAL ORDER:
+     *   1. pairipcore  — DRM bypass (before game)
+     *   2. maesdk      — Microsoft Auth SDK (before game)
+     *   3. mtbinloader2 — MaterialBinLoader / shader hooks (MUST be before minecraftpe)
+     *   4. PlayFabMultiplayer — can follow minecraftpe, but kept here for simplicity
      */
-    private val systemLoadedLibs = arrayOf(
+    private val systemLibsBeforeGame = arrayOf(
         "libpairipcore.so",
-        "libPlayFabMultiplayer.so",
         "libmaesdk.so",
         "libmtbinloader2.so",
+        "libPlayFabMultiplayer.so",
     )
 
     init {
@@ -123,7 +130,6 @@ class GamePackageManager private constructor(private val context: Context, priva
             val primaryAbi = getDeviceAbi()
             apkPaths.forEach { extractFromApk(it, outputDir, primaryAbi) }
 
-            // Fallback to other ABIs if any required lib is missing
             if (requiredLibs.any { !File(outputDir, it).exists() }) {
                 Log.w(TAG, "Primary ABI $primaryAbi libs missing, trying fallback ABIs")
                 listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
@@ -169,11 +175,6 @@ class GamePackageManager private constructor(private val context: Context, priva
 
     /**
      * Extracts [requiredLibs] from an APK/XELO archive for the given [abi].
-     *
-     * Accepts:
-     *  - base.apk / base.apk.xelo
-     *  - split APKs that contain "arm", "x86", or "config" in the filename
-     *  - Any archive whose name ends with .apk or .apk.xelo
      */
     private fun extractFromApk(apkPath: String, outputDir: File, abi: String) {
         val apkFile = File(apkPath)
@@ -221,15 +222,6 @@ class GamePackageManager private constructor(private val context: Context, priva
         else Log.i(TAG, "All required libs verified in $dir")
     }
 
-    private fun logFileOperation(action: String, lib: String, extra: String? = null, e: Exception? = null) {
-        val msg = buildString {
-            append("$action $lib")
-            if (extra != null) append(" $extra")
-            if (e != null) append(": ${e.message}")
-        }
-        if (e != null) Log.w(TAG, msg) else Log.d(TAG, msg)
-    }
-
     private fun createAssetManager(): AssetManager {
         val assets = AssetManager::class.java.newInstance()
         val addAssetPath = AssetManager::class.java.getMethod("addAssetPath", String::class.java)
@@ -270,10 +262,16 @@ class GamePackageManager private constructor(private val context: Context, priva
         }
     }
 
+    /**
+     * Loads a single library by name.
+     * System libs (in [systemLibsBeforeGame]) are loaded via System.loadLibrary.
+     * All others are loaded via System.load from the extracted [nativeLibDir].
+     */
     fun loadLibrary(name: String): Boolean {
-        val libFile = File(nativeLibDir, if (name.startsWith("lib")) name else "lib$name.so")
-        val libName = libFile.name
-        return if (systemLoadedLibs.contains(libName)) {
+        val libFileName = if (name.startsWith("lib")) name else "lib$name.so"
+        val isSystemLib = systemLibsBeforeGame.contains(libFileName)
+
+        return if (isSystemLib) {
             try {
                 System.loadLibrary(name.removePrefix("lib").removeSuffix(".so"))
                 Log.d(TAG, "Loaded $name as system library")
@@ -283,6 +281,7 @@ class GamePackageManager private constructor(private val context: Context, priva
                 false
             }
         } else {
+            val libFile = File(nativeLibDir, libFileName)
             try {
                 if (libFile.exists() && libFile.length() > 0) {
                     System.load(libFile.absolutePath)
@@ -299,16 +298,41 @@ class GamePackageManager private constructor(private val context: Context, priva
         }
     }
 
+    /**
+     * Loads all libraries in the CORRECT order to ensure shader/hook libs
+     * (especially libmtbinloader2.so) are active before libminecraftpe.so starts.
+     *
+     * Order:
+     *   1. Pre-game extracted libs  (c++_shared, fmod, MediaDecoders, HttpClient)
+     *   2. System hook libs         (pairipcore, maesdk, mtbinloader2, PlayFab)
+     *   3. Game lib                 (minecraftpe) ← always last
+     */
     fun loadAllLibraries(excludeLibs: Set<String> = emptySet()) {
-        val allLibs = requiredLibs + systemLoadedLibs
-        allLibs.forEach { lib ->
-            val libName = lib.removePrefix("lib").removeSuffix(".so")
-            if (excludeLibs.contains(libName) || excludeLibs.contains(lib)) {
-                Log.d(TAG, "Skipping excluded library: $libName")
-                return@forEach
+        fun shouldSkip(lib: String): Boolean {
+            val name = lib.removePrefix("lib").removeSuffix(".so")
+            return excludeLibs.contains(name) || excludeLibs.contains(lib)
+        }
+
+        // Step 1: pre-game extracted libs
+        for (lib in preGameLibs) {
+            if (shouldSkip(lib)) { Log.d(TAG, "Skipping excluded: $lib"); continue }
+            if (!loadLibrary(lib.removePrefix("lib").removeSuffix(".so"))) {
+                Log.w(TAG, "Could not load pre-game lib $lib")
             }
-            if (!loadLibrary(libName)) {
-                Log.w(TAG, "Could not load library $libName — continuing")
+        }
+
+        // Step 2: system hook libs (includes mtbinloader2 — before minecraftpe)
+        for (lib in systemLibsBeforeGame) {
+            if (shouldSkip(lib)) { Log.d(TAG, "Skipping excluded: $lib"); continue }
+            if (!loadLibrary(lib.removePrefix("lib").removeSuffix(".so"))) {
+                Log.w(TAG, "Could not load system lib $lib")
+            }
+        }
+
+        // Step 3: game lib — always last
+        if (!shouldSkip(gameLib)) {
+            if (!loadLibrary(gameLib.removePrefix("lib").removeSuffix(".so"))) {
+                Log.e(TAG, "Failed to load game library $gameLib")
             }
         }
     }
