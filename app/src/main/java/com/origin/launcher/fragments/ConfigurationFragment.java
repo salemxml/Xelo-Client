@@ -72,6 +72,11 @@ public class ConfigurationFragment extends BaseThemedFragment {
                         } catch (Throwable ignored) {}
                     }
             );
+            addSwitchItem(
+                    getString(R.string.shader_support),
+                    fs.isShaderSupportEnabled(),
+                    (btn, checked) -> fs.setShaderSupportEnabled(checked)
+            );
         }));
 
         settingsRecyclerView.post(() ->
