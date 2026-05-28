@@ -153,7 +153,7 @@ public class ModMenuDialog {
         utilityMods.add(new ModMenuAdapter.ModEntry("java_clouds", "Java Fancy Clouds"));
         utilityMods.add(new ModMenuAdapter.ModEntry("java_cubemap", "Java Cubemap"));
         utilityMods.add(new ModMenuAdapter.ModEntry("classic_skins", "Classic Vanilla Skins"));
-        utilityMods.add(new ModMenuAdapter.ModEntry("xelo_title", "Xelo Title"));
+        utilityMods.add(new ModMenuAdapter.ModEntry("xelo_title", "Salem Title"));
         utilityMods.add(new ModMenuAdapter.ModEntry("double_tppview", "2x TPP View"));
 
         statsMods = new ArrayList<>();
