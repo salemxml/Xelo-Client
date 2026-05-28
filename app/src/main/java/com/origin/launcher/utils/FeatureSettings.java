@@ -7,6 +7,7 @@ public class FeatureSettings {
     private static Context appContext;
     private boolean versionIsolationEnabled = false;
     private boolean logcatOverlayEnabled = false;
+    private boolean shaderSupportEnabled = false;
 
     public enum StorageType {
         INTERNAL,
@@ -37,6 +38,9 @@ public class FeatureSettings {
 
     public boolean isLogcatOverlayEnabled() { return logcatOverlayEnabled; }
     public void setLogcatOverlayEnabled(boolean enabled) { this.logcatOverlayEnabled = enabled; autoSave(); }
+
+    public boolean isShaderSupportEnabled() { return shaderSupportEnabled; }
+    public void setShaderSupportEnabled(boolean enabled) { this.shaderSupportEnabled = enabled; autoSave(); }
 
     private void autoSave() {
         if (appContext != null) {
