@@ -76,7 +76,7 @@ public class DiscordRPCHelper {
      * Update presence for idle state
      */
     public void updateIdlePresence() {
-        updatePresence("Using Xelo Client", "Idle");
+        updatePresence("Using SALEM CLIENT", "Idle");
     }
     
     /**
