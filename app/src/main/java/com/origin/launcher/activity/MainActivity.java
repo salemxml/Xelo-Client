@@ -261,7 +261,7 @@ public class MainActivity extends BaseThemedActivity {
                                        boolean creditsShown,
                                        boolean githubStarShown) {
         new MaterialAlertDialogBuilder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
-                .setTitle("Welcome to Xelo Client")
+                .setTitle("Welcome to SALEM CLIENT")
                 .setMessage("Launch Minecraft once before doing anything, to make the config load properly")
                 .setIcon(R.drawable.ic_info)
                 .setPositiveButton("Proceed", (dialog, which) -> {
@@ -382,7 +382,7 @@ public class MainActivity extends BaseThemedActivity {
     private void showGithubStarDialog(SharedPreferences prefs) {
         new MaterialAlertDialogBuilder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
                 .setTitle("Star our GitHub! ⭐")
-                .setMessage("If you enjoy Xelo Client, please consider starring our repository on GitHub. It helps us a lot!")
+                .setMessage("If you enjoy SALEM CLIENT, please consider starring our repository on GitHub. It helps us a lot!")
                 .setIcon(R.drawable.ic_info) // You can change this to a star icon if you have one
                 .setPositiveButton("Star", (dialog, which) -> {
                     Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Xelo-Client/Xelo-Client")); 
@@ -507,7 +507,7 @@ public class MainActivity extends BaseThemedActivity {
     private void showThemesDialog(SharedPreferences prefs, boolean disclaimerShown) {
         new MaterialAlertDialogBuilder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
                 .setTitle("THEMES!!🎉")
-                .setMessage("xelo client now supports custom themes! download themes from https://themes.xeloclient.in or make your own themes from https://docs.xeloclient.com")
+                .setMessage("SALEM CLIENT now supports custom themes! download themes from https://themes.xeloclient.in or make your own themes from https://docs.xeloclient.com")
                 .setIcon(R.drawable.ic_info)
                 .setPositiveButton("Proceed", (dialog, which) -> {
                     dialog.dismiss();
@@ -555,7 +555,7 @@ public class MainActivity extends BaseThemedActivity {
     protected void onResume() {
         super.onResume();
         
-        DiscordRPCHelper.getInstance().updatePresence("Using Xelo Client", "Using the best MCPE Client");
+        DiscordRPCHelper.getInstance().updatePresence("Using SALEM CLIENT", "Using the best MCPE Client");
     }
     
     @Override
@@ -618,7 +618,7 @@ public class MainActivity extends BaseThemedActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        DiscordRPCHelper.getInstance().updatePresence("Xelo Client", "Using the best MCPE Client");
+        DiscordRPCHelper.getInstance().updatePresence("SALEM CLIENT", "Using the best MCPE Client");
     }
 
     @Override
