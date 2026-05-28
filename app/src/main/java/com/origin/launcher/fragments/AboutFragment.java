@@ -123,11 +123,11 @@ public class AboutFragment extends BaseThemedFragment {
             String versionName = packageInfo.versionName;
             int versionCode = packageInfo.versionCode;
             
-            String versionInfo = "Xelo Client v" + versionName + " (Build " + versionCode + ")";
+            String versionInfo = "SALEM CLIENT v" + versionName + " (Build " + versionCode + ")";
             versionText.setText(versionInfo);
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Error getting app version", e);
-            versionText.setText("Xelo Client - Version unavailable");
+            versionText.setText("SALEM CLIENT - Version unavailable");
         }
     }
     
