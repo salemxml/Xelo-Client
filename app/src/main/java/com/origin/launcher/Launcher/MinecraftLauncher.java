@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.widget.Toast;
 
@@ -16,6 +15,8 @@ import android.util.Log;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 public class MinecraftLauncher {
     private static final String TAG = "MinecraftLauncher";
@@ -26,14 +27,14 @@ public class MinecraftLauncher {
 
     // ─── Version thresholds ───────────────────────────────────────────────────
     // libmaesdk.so  — required since 1.21.80 stable / 1.21.80.20 beta
-    private static final String MAESDK_STABLE  = "1.21.80";
-    private static final String MAESDK_BETA    = "1.21.80.20";
+    private static final String MAESDK_STABLE = "1.21.80";
+    private static final String MAESDK_BETA   = "1.21.80.20";
 
-    // libHttpClient.Android.so + libPlayFabMultiplayer.so — required since 1.21.130 stable / 1.21.130.20 beta
-    private static final String HTTPCLIENT_STABLE  = "1.21.130";
-    private static final String HTTPCLIENT_BETA    = "1.21.130.20";
+    // libHttpClient.Android.so + libPlayFabMultiplayer.so — required since 1.21.130
+    private static final String HTTPCLIENT_STABLE = "1.21.130";
+    private static final String HTTPCLIENT_BETA   = "1.21.130.20";
 
-    // New system libs introduced in 1.24.x (e.g. 1.24.0 / 1.24.0.20 beta)
+    // Extra system libs that may be needed from 1.24.x onward
     private static final String NEW_LIBS_STABLE = "1.24.0";
     private static final String NEW_LIBS_BETA   = "1.24.0.20";
     // ─────────────────────────────────────────────────────────────────────────
@@ -54,7 +55,8 @@ public class MinecraftLauncher {
         fakeInfo.sourceDir = apkFile.getAbsolutePath();
         fakeInfo.publicSourceDir = fakeInfo.sourceDir;
         String systemAbi = abiToSystemLibDir(Build.SUPPORTED_ABIS[0]);
-        File dstLibDir = new File(context.getDataDir(), "minecraft/" + version.directoryName + "/lib/" + systemAbi);
+        File dstLibDir = new File(context.getDataDir(),
+                "minecraft/" + version.directoryName + "/lib/" + systemAbi);
         fakeInfo.nativeLibraryDir = dstLibDir.getAbsolutePath();
         fakeInfo.packageName = packageName;
         fakeInfo.dataDir = version.versionDir.getAbsolutePath();
@@ -79,25 +81,22 @@ public class MinecraftLauncher {
 
     public void launch(Intent sourceIntent, GameVersion version) {
         Activity activity = (Activity) context;
-
         try {
             if (version == null) {
                 Log.e(TAG, "No version selected");
                 showLaunchErrorOnUi("No version selected");
                 return;
             }
-
             Log.i(TAG, "Launching Minecraft version: " + version.versionCode);
-
             activity.runOnUiThread(() -> {
                 dismissLoading();
                 loadingDialog = new LoadingDialog(activity);
                 loadingDialog.show();
             });
-
             new Thread(() -> {
                 try {
-                    gameManager = GamePackageManager.Companion.getInstance(context.getApplicationContext(), version);
+                    gameManager = GamePackageManager.Companion.getInstance(
+                            context.getApplicationContext(), version);
                     fillIntentWithMcPath(sourceIntent, version);
                     launchMinecraftActivity(sourceIntent, version, false);
                 } catch (Exception e) {
@@ -127,7 +126,6 @@ public class MinecraftLauncher {
 
     private void launchMinecraftActivity(Intent sourceIntent, GameVersion version, boolean modsEnabled) {
         Activity activity = (Activity) context;
-
         new Thread(() -> {
             try {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -135,53 +133,71 @@ public class MinecraftLauncher {
                 }
 
                 sourceIntent.setClass(context, MinecraftActivity.class);
-                ApplicationInfo mcInfo = version.isInstalled ?
-                        gameManager.getPackageContext().getApplicationInfo() :
-                        createFakeApplicationInfo(version, MC_PACKAGE_NAME);
+                ApplicationInfo mcInfo = version.isInstalled
+                        ? gameManager.getPackageContext().getApplicationInfo()
+                        : createFakeApplicationInfo(version, MC_PACKAGE_NAME);
                 sourceIntent.putExtra("MC_SRC", mcInfo.sourceDir);
                 if (mcInfo.splitSourceDirs != null) {
-                    sourceIntent.putExtra("MC_SPLIT_SRC", new ArrayList<>(Arrays.asList(mcInfo.splitSourceDirs)));
+                    sourceIntent.putExtra("MC_SPLIT_SRC",
+                            new ArrayList<>(Arrays.asList(mcInfo.splitSourceDirs)));
                 }
                 sourceIntent.putExtra("MODS_ENABLED", modsEnabled);
                 sourceIntent.putExtra("MINECRAFT_VERSION", version.versionCode);
                 sourceIntent.putExtra("MINECRAFT_VERSION_DIR", version.directoryName);
 
+                boolean loadMaesdk     = shouldLoadMaesdk(version);
+                boolean loadHttpClient = shouldLoadHttpClient(version);
+                boolean loadPlayFab    = shouldLoadPlayFab(version);
+                boolean loadNewLibs    = shouldLoadNewVersionLibs(version);
+
                 Log.i(TAG, "Version " + version.versionCode
-                        + " | maesdk=" + shouldLoadMaesdk(version)
-                        + " | httpClient=" + shouldLoadHttpClient(version)
-                        + " | playFab=" + shouldLoadPlayFab(version)
-                        + " | newLibs=" + shouldLoadNewVersionLibs(version));
+                        + " | maesdk=" + loadMaesdk
+                        + " | httpClient=" + loadHttpClient
+                        + " | playFab=" + loadPlayFab
+                        + " | newLibs=" + loadNewLibs);
 
-                // Step 1: pre-load HttpClient + c++_shared (needed first for 1.21.130+)
-                if (shouldLoadHttpClient(version)) {
-                    gameManager.loadLibrary("c++_shared");
-                    if (gameManager.loadLibrary("HttpClient.Android")) {
-                        Log.d(TAG, "Loaded libHttpClient.Android.so");
-                    } else {
-                        Log.w(TAG, "HttpClient.Android not found — continuing anyway");
-                    }
-                }
+                // ─── Correct loading order ────────────────────────────────────
+                // CRITICAL: libmtbinloader2.so (shader hooks) MUST be loaded
+                // before libminecraftpe.so. GamePackageManager.loadAllLibraries()
+                // guarantees this order internally.
+                // ─────────────────────────────────────────────────────────────
 
-                // Step 2: load maesdk bundle or legacy libs
-                if (shouldLoadMaesdk(version)) {
-                    java.util.Set<String> excludeLibs = new java.util.HashSet<>();
-                    if (shouldLoadHttpClient(version)) {
+                if (loadMaesdk) {
+                    // Full modern path — loadAllLibraries handles the correct order:
+                    //   pre-game libs → system hook libs (incl. mtbinloader2) → minecraftpe
+                    Set<String> excludeLibs = new HashSet<>();
+                    if (loadHttpClient) {
+                        // HttpClient & c++_shared will be loaded first explicitly below
                         excludeLibs.add("c++_shared");
                         excludeLibs.add("HttpClient.Android");
                     }
-                    if (!shouldLoadPlayFab(version)) {
+                    if (!loadPlayFab) {
                         excludeLibs.add("PlayFabMultiplayer");
                     }
-                    gameManager.loadAllLibraries(excludeLibs);
-                } else {
-                    // Legacy path (< 1.21.80): load core libs manually
-                    if (!shouldLoadHttpClient(version)) {
+
+                    // Pre-load HttpClient before everything else if needed
+                    if (loadHttpClient) {
                         gameManager.loadLibrary("c++_shared");
+                        if (gameManager.loadLibrary("HttpClient.Android")) {
+                            Log.d(TAG, "Loaded libHttpClient.Android.so");
+                        } else {
+                            Log.w(TAG, "HttpClient.Android not found — continuing");
+                        }
                     }
+
+                    // Load remaining libs in safe order (mtbinloader2 before minecraftpe)
+                    gameManager.loadAllLibraries(excludeLibs);
+
+                } else {
+                    // Legacy path (< 1.21.80): manual load — mtbinloader2 BEFORE minecraftpe
+                    gameManager.loadLibrary("c++_shared");
                     gameManager.loadLibrary("fmod");
                     gameManager.loadLibrary("MediaDecoders_Android");
-                    gameManager.loadLibrary("minecraftpe");
+                    // Shader hooks first!
+                    gameManager.loadLibrary("pairipcore");
                     gameManager.loadLibrary("mtbinloader2");
+                    // Game lib last
+                    gameManager.loadLibrary("minecraftpe");
                 }
 
                 activity.runOnUiThread(() -> {
@@ -192,7 +208,8 @@ public class MinecraftLauncher {
                 Log.e(TAG, "Failed to launch Minecraft activity: " + e.getMessage(), e);
                 activity.runOnUiThread(() -> {
                     dismissLoading();
-                    Toast.makeText(context, "Failed to launch: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(context, "Failed to launch: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
                 });
             }
         }).start();
@@ -200,32 +217,24 @@ public class MinecraftLauncher {
 
     // ─── Library need checks ──────────────────────────────────────────────────
 
-    /** libmaesdk.so — required since 1.21.80 stable / 1.21.80.20 beta */
     private boolean shouldLoadMaesdk(GameVersion version) {
         if (version == null || version.versionCode == null) return false;
         String v = version.versionCode;
         return isVersionAtLeast(v, isBeta(v) ? MAESDK_BETA : MAESDK_STABLE);
     }
 
-    /** libHttpClient.Android.so — required since 1.21.130 stable / 1.21.130.20 beta */
     private boolean shouldLoadHttpClient(GameVersion version) {
         if (version == null || version.versionCode == null) return false;
         String v = version.versionCode;
         return isVersionAtLeast(v, isBeta(v) ? HTTPCLIENT_BETA : HTTPCLIENT_STABLE);
     }
 
-    /** libPlayFabMultiplayer.so — same threshold as HttpClient */
     private boolean shouldLoadPlayFab(GameVersion version) {
         if (version == null || version.versionCode == null) return false;
         String v = version.versionCode;
         return isVersionAtLeast(v, isBeta(v) ? HTTPCLIENT_BETA : HTTPCLIENT_STABLE);
     }
 
-    /**
-     * Additional system libs that became required in 1.24.x+ (e.g. 1.26.23.1).
-     * GamePackageManager.loadAllLibraries() already attempts to load all known
-     * libs, but this flag can be used for extra pre-load logic if needed.
-     */
     private boolean shouldLoadNewVersionLibs(GameVersion version) {
         if (version == null || version.versionCode == null) return false;
         String v = version.versionCode;
@@ -234,34 +243,27 @@ public class MinecraftLauncher {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Returns true if the version string is a beta build (has 4 numeric parts,
-     * e.g. "1.26.23.1" or "1.21.120.20").
-     */
+    /** True if this is a beta build (4 numeric parts, e.g. "1.26.23.1"). */
     private boolean isBeta(String versionCode) {
         if (versionCode == null) return false;
-        String cleaned = versionCode.replaceAll("[^0-9.]", "");
-        return cleaned.split("\\.").length >= 4;
+        return versionCode.replaceAll("[^0-9.]", "").split("\\.").length >= 4;
     }
 
-    /**
-     * Compares two version strings numerically, part by part.
-     * Works for any depth: "1.21.130", "1.26.23.1", "2.0", etc.
-     */
-    private boolean isVersionAtLeast(String currentVersion, String targetVersion) {
+    /** Numeric version comparison — works for any depth. */
+    private boolean isVersionAtLeast(String current, String target) {
         try {
-            String[] current = currentVersion.replaceAll("[^0-9.]", "").split("\\.");
-            String[] target  = targetVersion.split("\\.");
-            int maxLen = Math.max(current.length, target.length);
-            for (int i = 0; i < maxLen; i++) {
-                int cur = i < current.length ? Integer.parseInt(current[i]) : 0;
-                int tgt = i < target.length  ? Integer.parseInt(target[i])  : 0;
-                if (cur > tgt) return true;
-                if (cur < tgt) return false;
+            String[] cur = current.replaceAll("[^0-9.]", "").split("\\.");
+            String[] tgt = target.split("\\.");
+            int max = Math.max(cur.length, tgt.length);
+            for (int i = 0; i < max; i++) {
+                int c = i < cur.length ? Integer.parseInt(cur[i]) : 0;
+                int t = i < tgt.length ? Integer.parseInt(tgt[i]) : 0;
+                if (c > t) return true;
+                if (c < t) return false;
             }
             return true;
         } catch (NumberFormatException e) {
-            Log.w(TAG, "Version parse error: " + currentVersion + " vs " + targetVersion);
+            Log.w(TAG, "Version parse error: " + current + " vs " + target);
             return false;
         }
     }
@@ -282,7 +284,8 @@ public class MinecraftLauncher {
     private void showLaunchErrorOnUi(String message) {
         Activity activity = (Activity) context;
         activity.runOnUiThread(() -> Toast.makeText(
-                activity, "Failed to launch Minecraft: " + message, Toast.LENGTH_LONG).show()
+                activity, "Failed to launch Minecraft: " + message,
+                Toast.LENGTH_LONG).show()
         );
     }
 }
