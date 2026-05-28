@@ -49,11 +49,13 @@ android {
         debug {
             applicationIdSuffix ".beta"
             versionNameSuffix "-beta"
+            debuggable true
         }
         release {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            debuggable false
         }
     }
 
@@ -96,6 +98,12 @@ android {
         exclude 'META-INF/LGPL2.1'
         exclude 'META-INF/ASL2.0'
         exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/kotlinx_coroutines_core.version'
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        disable 'MissingTranslation', 'ExtraTranslation'
     }
 }
 
@@ -124,6 +132,10 @@ dependencies {
     
     // Additional dependencies for latest Minecraft compatibility
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
+    
+    // Fix for Kotlin metadata
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
