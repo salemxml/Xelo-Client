@@ -127,7 +127,7 @@ public class HomeFragment extends BaseThemedFragment {
         dialogLayout.addView(titleText);
 
         TextView messageText = new TextView(requireContext());
-        messageText.setText("Xelo Client requires storage access to launch Minecraft and manage game files properly. Without this permission, the game cannot be launched.\n\nPlease grant storage permission to continue.");
+        messageText.setText("SALEM CLIENT requires storage access to launch Minecraft and manage game files properly. Without this permission, the game cannot be launched.\n\nPlease grant storage permission to continue.");
         messageText.setTextSize(14);
         messageText.setTextColor(ThemeManager.getInstance().getColor("onSurfaceVariant"));
         LinearLayout.LayoutParams msgParams = new LinearLayout.LayoutParams(
@@ -475,8 +475,8 @@ public class HomeFragment extends BaseThemedFragment {
             );
 
             shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Xelo Client Logs");
-            shareIntent.putExtra(Intent.EXTRA_TEXT, "Xelo Client Latest Logs");
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "SALEM CLIENT Logs");
+            shareIntent.putExtra(Intent.EXTRA_TEXT, "SALEM CLIENT Latest Logs");
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
             // Start the sharing activity
