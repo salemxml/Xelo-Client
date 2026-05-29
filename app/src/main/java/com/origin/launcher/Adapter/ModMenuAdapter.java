@@ -79,9 +79,13 @@ public class ModMenuAdapter extends RecyclerView.Adapter<ModMenuAdapter.ViewHold
         holder.modSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
             if (checked) {
                 modManager.addMod(entry.modId);
-                modManager.applyAllPatches();
+                if (com.origin.launcher.Launcher.inbuilt.model.ModIds.THIRD_PERSON_NAMETAG.equals(entry.modId)) {
+                    modManager.applyAllPatches();
+                }
             } else {
-                modManager.removeAllPatches();
+                if (com.origin.launcher.Launcher.inbuilt.model.ModIds.THIRD_PERSON_NAMETAG.equals(entry.modId)) {
+                    modManager.removeAllPatches();
+                }
                 modManager.removeMod(entry.modId);
             }
             applySwitchTheme(holder.modSwitch, checked);
@@ -89,7 +93,6 @@ public class ModMenuAdapter extends RecyclerView.Adapter<ModMenuAdapter.ViewHold
             if (overlayManager != null) {
                 overlayManager.showEnabledOverlays();
             }
-            holder.modSwitch.setChecked(modManager.isModAdded(entry.modId));
         });
     }
 
