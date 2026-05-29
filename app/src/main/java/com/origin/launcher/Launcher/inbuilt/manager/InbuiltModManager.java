@@ -202,7 +202,9 @@ public class InbuiltModManager {
     }
 
     public void removeAllPatches() {
-        NameTagMod.unpatch();
+        if (addedMods.contains(ModIds.THIRD_PERSON_NAMETAG)) {
+            NameTagMod.unpatch();
+        }
     }
 
     public boolean isModAdded(String modId) {
