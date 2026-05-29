@@ -770,10 +770,14 @@ public class ModulesFragment extends BaseThemedFragment {
                 }
             }
 
-            Toast.makeText(requireContext(), "Crosshair uploaded successfully!", Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "Crosshair uploaded successfully!", Toast.LENGTH_SHORT).show();
+            }
 
         } catch (IOException e) {
-            Toast.makeText(requireContext(), "Failed to upload crosshair: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "Failed to upload crosshair: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
             e.printStackTrace();
         }
     }
@@ -924,9 +928,11 @@ public class ModulesFragment extends BaseThemedFragment {
 
     private void onModuleToggle(ModuleItem module, boolean isEnabled) {
         updateConfigFile(module.getConfigKey(), isEnabled);
-        Toast.makeText(requireContext(),
-            module.getName() + " " + (isEnabled ? "enabled" : "disabled"),
-            Toast.LENGTH_SHORT).show();
+        if (isAdded() && getContext() != null) {
+            Toast.makeText(getContext(),
+                module.getName() + " " + (isEnabled ? "enabled" : "disabled"),
+                Toast.LENGTH_SHORT).show();
+        }
     
         // --- NEW CODE: Toggle visibility when switch is pressed ---
         if (module.getConfigKey().equals("custom_cross_hair") && crosshairButtonRow != null && crosshairSpacer != null) {
@@ -969,7 +975,9 @@ public class ModulesFragment extends BaseThemedFragment {
             }
 
         } catch (IOException | JSONException e) {
-            Toast.makeText(requireContext(), "Failed to load module config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "Failed to load module config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
             e.printStackTrace();
         }
     }
@@ -981,7 +989,9 @@ public class ModulesFragment extends BaseThemedFragment {
             if (parentDir != null && !parentDir.exists()) {
                 boolean created = parentDir.mkdirs();
                 if (!created) {
-                    Toast.makeText(requireContext(), "Failed to create config directory", Toast.LENGTH_SHORT).show();
+                    if (isAdded() && getContext() != null) {
+                        Toast.makeText(getContext(), "Failed to create config directory", Toast.LENGTH_SHORT).show();
+                    }
                     return;
                 }
             }
@@ -1008,7 +1018,9 @@ public class ModulesFragment extends BaseThemedFragment {
             }
 
         } catch (IOException | JSONException e) {
-            Toast.makeText(requireContext(), "Failed to create default config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "Failed to create default config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
             e.printStackTrace();
         }
     }
@@ -1034,7 +1046,9 @@ public class ModulesFragment extends BaseThemedFragment {
                 if (parentDir != null && !parentDir.exists()) {
                     boolean created = parentDir.mkdirs();
                     if (!created) {
-                        Toast.makeText(requireContext(), "Failed to create config directory", Toast.LENGTH_SHORT).show();
+                        if (isAdded() && getContext() != null) {
+                            Toast.makeText(getContext(), "Failed to create config directory", Toast.LENGTH_SHORT).show();
+                        }
                         return;
                     }
                 }
@@ -1049,7 +1063,9 @@ public class ModulesFragment extends BaseThemedFragment {
             }
 
         } catch (IOException | JSONException e) {
-            Toast.makeText(requireContext(), "Failed to update config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "Failed to update config: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
             e.printStackTrace();
         }
     }
