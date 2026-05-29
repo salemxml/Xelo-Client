@@ -63,7 +63,7 @@ public class ModMenuDialog {
         set.setAnimationListener(new Animation.AnimationListener() {
             @Override public void onAnimationStart(Animation a) {}
             @Override public void onAnimationRepeat(Animation a) {}
-            @Override public void onAnimationEnd(Animation a) { dialog.dismiss(); }
+            @Override public void onAnimationEnd(Animation a) { if (dialog != null && dialog.isShowing()) { try { dialog.dismiss(); } catch (Exception ignored) {} } }
         });
         animTarget.startAnimation(set);
     }
@@ -114,18 +114,22 @@ public class ModMenuDialog {
         if (btnBack != null) btnBack.setColorFilter(onSurfaceColor);
         if (btnWrench != null) btnWrench.setColorFilter(onSurfaceVariantColor);
 
-        btnBack.setOnClickListener(v -> {
-            animatePop(btnBack);
-            btnBack.postDelayed(this::dismissWithAnimation, 150);
-        });
+        if (btnBack != null) {
+            btnBack.setOnClickListener(v -> {
+                animatePop(btnBack);
+                btnBack.postDelayed(this::dismissWithAnimation, 150);
+            });
+        }
 
-        btnWrench.setOnClickListener(v -> {
-            animatePop(btnWrench);
-            btnWrench.postDelayed(() -> {
-                dismissWithAnimation();
-                new InbuiltModsCustomizeDialog(activity, false).show();
-            }, 150);
-        });
+        if (btnWrench != null) {
+            btnWrench.setOnClickListener(v -> {
+                animatePop(btnWrench);
+                btnWrench.postDelayed(() -> {
+                    dismissWithAnimation();
+                    new InbuiltModsCustomizeDialog(activity, false).show();
+                }, 150);
+            });
+        }
 
         int modMenuOpacity = InbuiltModManager.getInstance(activity).getModMenuOpacity();
         dialog.getWindow().getDecorView().setAlpha(modMenuOpacity / 100f);
