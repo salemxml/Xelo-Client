@@ -501,7 +501,7 @@ public class HomeFragment extends BaseThemedFragment {
         BufferedInputStream bufInStream = new BufferedInputStream(inStream);
         ZipInputStream inZipStream = new ZipInputStream(bufInStream);
         if (!checkLibCompatibility(inZipStream)) {
-            handler.post(() -> alertAndExit("Wrong minecraft architecture", "The minecraft you have installed does not support the same main architecture (" + Build.SUPPORTED_ABIS[0] + ") your device uses, Xelo client cant work with it"));
+            handler.post(() -> alertAndExit("Wrong minecraft architecture", "The minecraft you have installed does not support the same main architecture (" + Build.SUPPORTED_ABIS[0] + ") your device uses, SALEM CLIENT cant work with it"));
             return false;
         }
         Method addNativePath = pathList.getClass().getDeclaredMethod("addNativePath", Collection.class);
